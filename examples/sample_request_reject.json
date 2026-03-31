@@ -1,0 +1,20 @@
+{
+  "idea_text": "Test a free delivery banner for repeat customers on checkout pages to improve purchase conversion without hurting gross margin.",
+  "submitter_name": "Jordan Lee",
+  "team": "Growth Analytics",
+  "channel": "webhook",
+  "business_context": "The reviewer has decided not to proceed with the current proposal.",
+  "clarification_answers": {
+    "q1": "Primary metric is purchase conversion rate.",
+    "q2": "The audience is logged-in repeat customers with at least two purchases in the last 90 days."
+  },
+  "reviewer_action": "reject",
+  "reviewer_comments": "Do not proceed until the commercial impact model is reworked outside this workflow.",
+  "baseline_inputs": {
+    "baseline_conversions": 8400,
+    "baseline_visitors": 120000,
+    "expected_relative_lift": 0.025,
+    "daily_eligible_traffic": 18000
+  },
+  "max_iterations": 3
+}

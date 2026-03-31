@@ -1,0 +1,19 @@
+{
+  "idea_text": "Test a free delivery banner for repeat customers on checkout pages to improve purchase conversion without hurting gross margin.",
+  "submitter_name": "Jordan Lee",
+  "team": "Growth Analytics",
+  "channel": "webhook",
+  "business_context": "The growth team believes delivery cost is a recurring friction point for repeat purchasers during checkout.",
+  "clarification_answers": {},
+  "reviewer_action": "",
+  "reviewer_comments": "",
+  "baseline_inputs": {
+    "baseline_conversions": 8400,
+    "baseline_visitors": 120000,
+    "variant_conversions": 0,
+    "variant_visitors": 0,
+    "expected_relative_lift": 0.025,
+    "daily_eligible_traffic": 18000
+  },
+  "max_iterations": 3
+}

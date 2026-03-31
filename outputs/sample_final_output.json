@@ -1,0 +1,91 @@
+{
+  "status": "completed",
+  "experiment_id": "exp_20260331_free_delivery_repeat_customers",
+  "experiment_slug": "free-delivery-repeat-customers",
+  "final_decision": "Ready to Launch",
+  "approval_status": "approved",
+  "iteration_history": [
+    {
+      "iteration_number": 1,
+      "decision": "Needs Revision",
+      "readiness_score": 19,
+      "what_changed": [],
+      "feedback": {
+        "missing_items": [
+          "Explicit gross margin threshold",
+          "Delivery subsidy threshold",
+          "Exposure event definition"
+        ],
+        "weak_areas": [
+          "Instrumentation detail",
+          "Commercial guardrails"
+        ],
+        "required_changes": [
+          "Add event-level exposure instrumentation",
+          "Define commercial guardrail thresholds",
+          "Clarify eligibility logic"
+        ],
+        "suggested_alternative_design": "Remain with a user-level A/B test rather than a phased rollout because the treatment is user-targeted and easy to randomize."
+      }
+    },
+    {
+      "iteration_number": 2,
+      "decision": "Ready to Launch",
+      "readiness_score": 24,
+      "what_changed": [
+        "Added gross margin and subsidy guardrails",
+        "Added banner exposure instrumentation requirements",
+        "Clarified user-level targeting and eligibility rules"
+      ],
+      "feedback": {
+        "missing_items": [],
+        "weak_areas": [],
+        "required_changes": [],
+        "suggested_alternative_design": ""
+      }
+    }
+  ],
+  "readiness_scoring": {
+    "dimensions": {
+      "hypothesis_clarity": 4,
+      "measurement_readiness": 4,
+      "instrumentation_readiness": 4,
+      "business_impact_potential": 4,
+      "feasibility": 4,
+      "risk_level": 2
+    },
+    "blocker_counts": {
+      "critical": 0,
+      "medium": 0,
+      "total": 0
+    },
+    "readiness_score": 24,
+    "suggested_recommendation": "Ready to Launch"
+  },
+  "stats_summary": {
+    "baseline_rate": 0.07,
+    "variant_rate": 0,
+    "absolute_uplift": -0.07,
+    "relative_lift": -1,
+    "sample_size_per_variant_approx": 36562,
+    "estimated_test_duration_days": 5,
+    "significance_summary": "No observed variant data supplied; using planning-style estimates only."
+  },
+  "artifact_paths": [
+    "experiments/free-delivery-repeat-customers/experiment_brief.md",
+    "experiments/free-delivery-repeat-customers/metric_framework.md",
+    "experiments/free-delivery-repeat-customers/decision_log.md",
+    "experiments/free-delivery-repeat-customers/risks_and_assumptions.md",
+    "experiments/free-delivery-repeat-customers/structured_output.json"
+  ],
+  "artifact_bundle": {
+    "experiment_brief_markdown": "# Experiment Brief\n\nFree delivery banner test for eligible repeat customers.",
+    "metric_framework_markdown": "# Metric Framework\n\nPrimary metric: purchase conversion rate.",
+    "decision_log_markdown": "# Decision Log\n\nIteration 2 approved for launch.",
+    "risks_and_assumptions_markdown": "# Risks And Assumptions\n\nMonitor subsidy cost and gross margin impact.",
+    "structured_output_json": {
+      "final_decision": "Ready to Launch",
+      "approval_status": "approved"
+    }
+  }
+}

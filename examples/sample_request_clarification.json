@@ -1,0 +1,12 @@
+{
+  "idea_text": "We should try a homepage change to increase engagement.",
+  "submitter_name": "Taylor Morgan",
+  "team": "Product",
+  "channel": "webhook",
+  "business_context": "The team wants to test a new homepage experience but has not yet defined who should be included or how success will be measured.",
+  "clarification_answers": {},
+  "reviewer_action": "",
+  "reviewer_comments": "",
+  "baseline_inputs": {},
+  "max_iterations": 3
+}

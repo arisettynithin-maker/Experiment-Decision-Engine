@@ -1,0 +1,83 @@
+{
+  "experiment_id": "exp_20260331_free_delivery_repeat_customers",
+  "experiment_slug": "free-delivery-repeat-customers",
+  "final_decision": "Ready to Launch",
+  "approval_status": "approved",
+  "iteration_history": [
+    {
+      "iteration_number": 1,
+      "decision": "Needs Revision",
+      "readiness_score": 19,
+      "what_changed": [],
+      "feedback": {
+        "missing_items": [
+          "Explicit gross margin threshold",
+          "Delivery subsidy threshold",
+          "Exposure event definition"
+        ],
+        "weak_areas": [
+          "Instrumentation detail",
+          "Commercial guardrails"
+        ],
+        "required_changes": [
+          "Add event-level exposure instrumentation",
+          "Define commercial guardrail thresholds",
+          "Clarify eligibility logic"
+        ],
+        "suggested_alternative_design": "Remain with a user-level A/B test rather than a phased rollout because the treatment is user-targeted and easy to randomize."
+      }
+    },
+    {
+      "iteration_number": 2,
+      "decision": "Ready to Launch",
+      "readiness_score": 24,
+      "what_changed": [
+        "Added gross margin and subsidy guardrails",
+        "Added banner exposure instrumentation requirements",
+        "Clarified user-level targeting and eligibility rules"
+      ],
+      "feedback": {
+        "missing_items": [],
+        "weak_areas": [],
+        "required_changes": [],
+        "suggested_alternative_design": ""
+      }
+    }
+  ],
+  "final_brief": {
+    "experiment_name": "Free Delivery Banner For Repeat Customers",
+    "business_problem": "Repeat customers may abandon purchase because delivery cost remains a conversion friction point.",
+    "hypothesis": "Showing a free delivery banner to eligible repeat customers will improve purchase conversion by reducing perceived delivery friction.",
+    "target_segment": "Logged-in repeat customers with at least 2 purchases in the prior 90 days.",
+    "primary_metric": "Purchase conversion rate",
+    "secondary_metrics": [
+      "Average order value",
+      "Add-to-cart rate",
+      "Checkout start rate"
+    ],
+    "guardrail_metrics": [
+      "Gross margin per order",
+      "Refund or cancellation rate",
+      "Delivery subsidy cost per order"
+    ],
+    "experiment_type": "Messaging experiment",
+    "randomization_unit": "User ID",
+    "expected_effect": "1.5% to 3.0% relative lift in purchase conversion rate",
+    "success_criteria": "Positive conversion impact with no unacceptable margin deterioration or refund-rate increase."
+  },
+  "review_summary": {
+    "recommended_experiment_approach": "User-level A/B test",
+    "instrumentation_readiness": "Sufficient after event-level exposure logging was added.",
+    "bias_risks": [
+      "Cross-device assignment inconsistency",
+      "Eligibility rule drift"
+    ]
+  },
+  "artifact_paths": [
+    "experiments/free-delivery-repeat-customers/experiment_brief.md",
+    "experiments/free-delivery-repeat-customers/metric_framework.md",
+    "experiments/free-delivery-repeat-customers/decision_log.md",
+    "experiments/free-delivery-repeat-customers/risks_and_assumptions.md",
+    "experiments/free-delivery-repeat-customers/structured_output.json"
+  ]
+}

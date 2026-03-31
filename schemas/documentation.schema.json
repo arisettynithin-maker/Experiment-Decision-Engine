@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExperimentDocumentationBundle",
+  "type": "object",
+  "required": [
+    "experiment_brief_markdown",
+    "metric_framework_markdown",
+    "decision_log_markdown",
+    "risks_and_assumptions_markdown",
+    "structured_output_json"
+  ],
+  "properties": {
+    "experiment_brief_markdown": { "type": "string" },
+    "metric_framework_markdown": { "type": "string" },
+    "decision_log_markdown": { "type": "string" },
+    "risks_and_assumptions_markdown": { "type": "string" },
+    "structured_output_json": { "type": "object" }
+  }
+}

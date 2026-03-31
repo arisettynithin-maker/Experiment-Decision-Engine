@@ -1,0 +1,1076 @@
+{
+  "name": "Agentic Experimentation Decision Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agentic-experimentation-decision-engine",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Receive Experiment Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        40
+      ],
+      "notes": "Entry point for raw experiment requests. For testing, submit idea_text plus optional clarification_answers, reviewer_action, reviewer_comments, baseline_inputs, and max_iterations.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "idea_text",
+              "value": "={{ $json.body?.idea_text || '' }}"
+            },
+            {
+              "name": "submitter_name",
+              "value": "={{ $json.body?.submitter_name || 'Unknown Submitter' }}"
+            },
+            {
+              "name": "team",
+              "value": "={{ $json.body?.team || 'Unknown Team' }}"
+            },
+            {
+              "name": "channel",
+              "value": "={{ $json.body?.channel || 'webhook' }}"
+            },
+            {
+              "name": "business_context",
+              "value": "={{ $json.body?.business_context || '' }}"
+            },
+            {
+              "name": "reviewer_action",
+              "value": "={{ $json.body?.reviewer_action || '' }}"
+            },
+            {
+              "name": "reviewer_comments",
+              "value": "={{ $json.body?.reviewer_comments || '' }}"
+            }
+          ],
+          "number": [
+            {
+              "name": "max_iterations",
+              "value": "={{ Number($json.body?.max_iterations || 3) }}"
+            }
+          ],
+          "json": [
+            {
+              "name": "clarification_answers",
+              "value": "={{ $json.body?.clarification_answers || {} }}"
+            },
+            {
+              "name": "baseline_inputs",
+              "value": "={{ $json.body?.baseline_inputs || {} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2",
+      "name": "Standardize Input Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -820,
+        40
+      ],
+      "notes": "Normalizes inbound request fields so the workflow can be tested with both complete and incomplete payloads.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "function slugify(value) {\n  return String(value || 'experiment')\n    .toLowerCase()\n    .replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-+|-+$/g, '')\n    .slice(0, 80) || 'experiment';\n}\n\nconst now = new Date().toISOString();\nconst slug = slugify($json.idea_text || 'experiment');\nconst experimentId = `exp_${now.slice(0, 10).replace(/-/g, '')}_${slug.replace(/-/g, '_')}`;\n\nreturn [{\n  json: {\n    ...$json,\n    submitted_at: now,\n    experiment_slug: slug,\n    experiment_id: experimentId,\n    iteration_number: 1,\n    iteration_history: [],\n    normalized_request: {\n      idea_text: $json.idea_text,\n      submitter_name: $json.submitter_name,\n      team: $json.team,\n      channel: $json.channel,\n      business_context: $json.business_context,\n      clarification_answers: $json.clarification_answers,\n      baseline_inputs: $json.baseline_inputs,\n      reviewer_action: $json.reviewer_action,\n      reviewer_comments: $json.reviewer_comments,\n      experiment_id: experimentId,\n      experiment_slug: slug,\n      submitted_at: now\n    }\n  }\n}];"
+      },
+      "id": "3",
+      "name": "Initialize Experiment Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -660,
+        40
+      ],
+      "notes": "Creates workflow context and experiment identifiers used throughout scoring, iteration, and approval.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENAI_BASE_URL ? $env.OPENAI_BASE_URL + '/chat/completions' : 'https://api.openai.com/v1/chat/completions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENAI_MODEL || 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You are an experiment intake agent inside an n8n workflow. Convert a raw business experiment idea into a structured experiment brief. Output JSON only. Do not invent unsupported details. If required information is missing, set brief_status to needs_clarification and list missing_information. Return fields: experiment_name, experiment_slug, brief_status, business_problem, hypothesis, target_segment, primary_metric, secondary_metrics, guardrail_metrics, experiment_type, recommended_test_design, randomization_unit, expected_effect, success_criteria, instrumentation_requirements, assumptions, risks, implementation_notes, missing_information.'\n    },\n    {\n      role: 'user',\n      content: `Input payload:\\n${JSON.stringify($json.normalized_request, null, 2)}`\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "4",
+      "name": "Generate Experiment Brief (AI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -500,
+        40
+      ],
+      "notes": "Uses the raw idea to create the first structured experiment brief.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const prior = $('Initialize Experiment Context').first().json;\nconst content = $json.choices?.[0]?.message?.content || $json.output_text || '';\nlet brief;\n\ntry {\n  brief = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (error) {\n  brief = {\n    experiment_name: 'Parsing Error',\n    experiment_slug: prior.experiment_slug || 'experiment',\n    brief_status: 'needs_clarification',\n    business_problem: '',\n    hypothesis: '',\n    target_segment: '',\n    primary_metric: '',\n    secondary_metrics: [],\n    guardrail_metrics: [],\n    experiment_type: '',\n    recommended_test_design: '',\n    randomization_unit: '',\n    expected_effect: '',\n    success_criteria: '',\n    instrumentation_requirements: [],\n    assumptions: ['Model output could not be parsed as JSON.'],\n    risks: ['Malformed intake agent output.'],\n    implementation_notes: '',\n    missing_information: ['Valid structured brief JSON']\n  };\n}\n\nconst required = ['business_problem', 'hypothesis', 'target_segment', 'primary_metric', 'randomization_unit'];\nconst missing = [\n  ...(Array.isArray(brief.missing_information) ? brief.missing_information : []),\n  ...required.filter((key) => !brief[key] || String(brief[key]).trim() === '')\n].filter((value, index, array) => array.indexOf(value) === index);\n\nreturn [{\n  json: {\n    ...prior,\n    structured_brief: {\n      ...brief,\n      experiment_slug: brief.experiment_slug || prior.experiment_slug,\n      experiment_name: brief.experiment_name || 'Untitled Experiment'\n    },\n    missing_information: missing,\n    is_complete: missing.length === 0 && brief.brief_status !== 'needs_clarification'\n  }\n}];"
+      },
+      "id": "5",
+      "name": "Validate & Structure Brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -340,
+        40
+      ],
+      "notes": "Validates the initial brief, adds fallback behavior for malformed AI output, and identifies missing fields.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_complete }}",
+              "operation": "isFalse"
+            }
+          ]
+        }
+      },
+      "id": "6",
+      "name": "Check Missing Information",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        40
+      ],
+      "notes": "Routes incomplete requests into a clarification path; complete requests continue directly to review.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENAI_BASE_URL ? $env.OPENAI_BASE_URL + '/chat/completions' : 'https://api.openai.com/v1/chat/completions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENAI_MODEL || 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You are a clarification agent inside an experimentation workflow. Ask at most 3 highly focused questions needed to make the experiment brief reviewable. Output JSON only with fields: needs_follow_up, questions, rationale.'\n    },\n    {\n      role: 'user',\n      content: `Current brief:\\n${JSON.stringify($json.structured_brief, null, 2)}\\n\\nMissing information:\\n${JSON.stringify($json.missing_information, null, 2)}`\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "7",
+      "name": "Generate Clarification Questions (AI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -20,
+        -70
+      ],
+      "notes": "Generates the minimal clarification questions needed to make the brief analytically reviewable.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const prior = $('Validate & Structure Brief').first().json;\nconst content = $json.choices?.[0]?.message?.content || $json.output_text || '';\nlet followup = { needs_follow_up: true, questions: [], rationale: [] };\n\ntry {\n  followup = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (error) {\n  followup = {\n    needs_follow_up: true,\n    questions: [\n      { question_id: 'q1', question_text: 'What is the primary metric for success?' },\n      { question_id: 'q2', question_text: 'Which user segment should be included in the experiment?' }\n    ],\n    rationale: ['The follow-up agent output could not be parsed, so default critical questions were generated.']\n  };\n}\n\nreturn [{ json: { ...prior, follow_up: followup } }];"
+      },
+      "id": "8",
+      "name": "Extract Clarification Questions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        140,
+        -70
+      ],
+      "notes": "Extracts clarification questions with a deterministic fallback set for testing.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ Object.keys($json.clarification_answers || {}).length > 0 }}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "9",
+      "name": "Check If Clarifications Provided",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        300,
+        -70
+      ],
+      "notes": "If clarification answers are present in the test payload, the brief is rebuilt. Otherwise the workflow returns a clarification request.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  status: 'awaiting_clarification',\n  experiment_id: $json.experiment_id,\n  experiment_slug: $json.experiment_slug,\n  follow_up_questions: $json.follow_up.questions,\n  rationale: $json.follow_up.rationale,\n  instruction: 'Re-run the webhook with the same idea_text and a clarification_answers object to continue.'\n} }}",
+        "options": {}
+      },
+      "id": "10",
+      "name": "Return Clarification Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        460,
+        -150
+      ],
+      "notes": "Returns clarification questions to the caller and ends only the clarification-needed path.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const brief = $json.structured_brief || {};\nconst answers = $json.clarification_answers || {};\nconst mergedRequest = {\n  ...$json.normalized_request,\n  clarification_answers: answers,\n  current_brief: brief\n};\n\nreturn [{\n  json: {\n    ...$json,\n    normalized_request: mergedRequest\n  }\n}];"
+      },
+      "id": "11",
+      "name": "Merge Clarifications Into Brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        -10
+      ],
+      "notes": "Merges clarification answers into the normalized request before the brief rebuild step.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENAI_BASE_URL ? $env.OPENAI_BASE_URL + '/chat/completions' : 'https://api.openai.com/v1/chat/completions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENAI_MODEL || 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You are an experiment intake agent inside an n8n workflow. Rebuild the experiment brief using the original idea and clarification answers. Output JSON only with fields: experiment_name, experiment_slug, brief_status, business_problem, hypothesis, target_segment, primary_metric, secondary_metrics, guardrail_metrics, experiment_type, recommended_test_design, randomization_unit, expected_effect, success_criteria, instrumentation_requirements, assumptions, risks, implementation_notes, missing_information.'\n    },\n    {\n      role: 'user',\n      content: `Rebuild this brief using the clarification answers:\\n${JSON.stringify($json.normalized_request, null, 2)}`\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "12",
+      "name": "Rebuild Experiment Brief (AI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        620,
+        -10
+      ],
+      "notes": "Rebuilds the experiment brief using the clarification answers.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const prior = $('Merge Clarifications Into Brief').first().json;\nconst content = $json.choices?.[0]?.message?.content || $json.output_text || '';\nlet brief;\n\ntry {\n  brief = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (error) {\n  brief = prior.structured_brief || {};\n}\n\nreturn [{\n  json: {\n    ...prior,\n    structured_brief: {\n      ...brief,\n      experiment_slug: brief.experiment_slug || prior.experiment_slug,\n      experiment_name: brief.experiment_name || 'Untitled Experiment'\n    },\n    missing_information: Array.isArray(brief.missing_information) ? brief.missing_information : [],\n    is_complete: true\n  }\n}];"
+      },
+      "id": "13",
+      "name": "Validate Updated Brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        -10
+      ],
+      "notes": "Validates the rebuilt brief after clarification and rejoins the main review flow.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENAI_BASE_URL ? $env.OPENAI_BASE_URL + '/chat/completions' : 'https://api.openai.com/v1/chat/completions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENAI_MODEL || 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You are a senior experimentation and product analytics reviewer operating inside a governed workflow. Review the experiment brief and evaluate testability, metric quality, design fit, instrumentation readiness, confounding risks, randomization, guardrails, blockers, and revision actions. Output JSON only with fields: review_summary, hypothesis_testability, metric_quality, experiment_design_fit, instrumentation_readiness, bias_and_confounding_risks, randomization_review, missing_guardrails, recommended_experiment_approach, blockers, revision_actions, reviewer_confidence.'\n    },\n    {\n      role: 'user',\n      content: `Experiment brief:\\n${JSON.stringify($json.structured_brief, null, 2)}`\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "14",
+      "name": "Evaluate Experiment Design (AI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        40
+      ],
+      "notes": "Reviews the experiment brief like a senior experimentation analyst.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "let prior;\ntry {\n  prior = $('Validate Updated Brief').first().json;\n} catch (error) {\n  try {\n    prior = $('Update Brief & Increment Iteration').first().json;\n  } catch (innerError) {\n    prior = $('Validate & Structure Brief').first().json;\n  }\n}\n\nconst content = $json.choices?.[0]?.message?.content || $json.output_text || '';\nlet review;\n\ntry {\n  review = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (error) {\n  review = {\n    review_summary: 'Unable to parse review output.',\n    hypothesis_testability: { score: 2, comment: 'Parsing failure.' },\n    metric_quality: { score: 2, comment: 'Parsing failure.' },\n    experiment_design_fit: { score: 2, comment: 'Parsing failure.' },\n    instrumentation_readiness: { score: 2, comment: 'Parsing failure.' },\n    bias_and_confounding_risks: ['Review output parsing error'],\n    randomization_review: 'Unknown',\n    missing_guardrails: ['Unknown due to parsing error'],\n    recommended_experiment_approach: 'Needs manual review',\n    blockers: [{ severity: 'medium', issue: 'Review output could not be parsed.' }],\n    revision_actions: ['Re-run review or inspect model response.'],\n    reviewer_confidence: 'low'\n  };\n}\n\nconst deterministicBlockers = [];\nconst brief = prior.structured_brief || {};\nif (!brief.primary_metric) deterministicBlockers.push({ severity: 'critical', issue: 'Primary metric is missing.' });\nif (!brief.randomization_unit) deterministicBlockers.push({ severity: 'critical', issue: 'Randomization unit is missing.' });\nif (!Array.isArray(brief.guardrail_metrics) || brief.guardrail_metrics.length === 0) deterministicBlockers.push({ severity: 'medium', issue: 'Guardrail metrics are missing.' });\n\nreturn [{\n  json: {\n    ...prior,\n    review_assessment: {\n      ...review,\n      blockers: [...(Array.isArray(review.blockers) ? review.blockers : []), ...deterministicBlockers]\n    }\n  }\n}];"
+      },
+      "id": "15",
+      "name": "Extract Review Insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        40
+      ],
+      "notes": "Combines AI review output with deterministic governance checks such as missing primary metric or randomization unit.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const brief = $json.structured_brief || {};\nconst review = $json.review_assessment || {};\nconst blockers = Array.isArray(review.blockers) ? review.blockers : [];\n\nfunction scoreFromReview(reviewDimension, fallback = 2) {\n  return Number(reviewDimension?.score || fallback);\n}\n\nfunction hasValue(value) {\n  if (Array.isArray(value)) return value.length > 0;\n  return value !== undefined && value !== null && String(value).trim() !== '';\n}\n\nconst hypothesisClarity = scoreFromReview(review.hypothesis_testability, hasValue(brief.hypothesis) ? 3 : 1);\nconst measurementReadiness = scoreFromReview(review.metric_quality, hasValue(brief.primary_metric) ? 3 : 1);\nconst instrumentationReadiness = scoreFromReview(review.instrumentation_readiness, hasValue(brief.instrumentation_requirements) ? 3 : 1);\nconst businessImpactPotential = hasValue(brief.expected_effect) ? 4 : 2;\nconst feasibility = hasValue(brief.randomization_unit) && hasValue(brief.experiment_type) && hasValue(brief.target_segment) ? 4 : 2;\n\nlet riskLevel = 2;\nconst riskCount = Array.isArray(review.bias_and_confounding_risks) ? review.bias_and_confounding_risks.length : 0;\nif (riskCount >= 4) riskLevel = 5;\nelse if (riskCount >= 3) riskLevel = 4;\nelse if (riskCount >= 2) riskLevel = 3;\nif ((brief.risks || []).length >= 4) riskLevel = Math.max(riskLevel, 4);\n\nconst criticalBlockers = blockers.filter((b) => b.severity === 'critical');\nconst mediumBlockers = blockers.filter((b) => b.severity === 'medium');\nconst readinessScore = hypothesisClarity + measurementReadiness + instrumentationReadiness + businessImpactPotential + feasibility + (5 - riskLevel);\n\nlet suggestedRecommendation = 'Needs Revision';\nif (criticalBlockers.length > 0 || readinessScore < 15) suggestedRecommendation = 'Not Recommended Yet';\nelse if (readinessScore >= 22 && mediumBlockers.length === 0) suggestedRecommendation = 'Ready to Launch';\n\nreturn [{\n  json: {\n    ...$json,\n    readiness_scoring: {\n      dimensions: {\n        hypothesis_clarity: hypothesisClarity,\n        measurement_readiness: measurementReadiness,\n        instrumentation_readiness: instrumentationReadiness,\n        business_impact_potential: businessImpactPotential,\n        feasibility,\n        risk_level: riskLevel\n      },\n      blocker_counts: {\n        critical: criticalBlockers.length,\n        medium: mediumBlockers.length,\n        total: blockers.length\n      },\n      readiness_score: readinessScore,\n      suggested_recommendation: suggestedRecommendation\n    }\n  }\n}];"
+      },
+      "id": "16",
+      "name": "Compute Experiment Readiness Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        40
+      ],
+      "notes": "Computes the deterministic control score used to govern the AI recommendation.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputs = $json.baseline_inputs || {};\n\nfunction rate(conversions, visitors) {\n  return visitors > 0 ? conversions / visitors : 0;\n}\n\nfunction round(value, digits = 4) {\n  const factor = 10 ** digits;\n  return Math.round(value * factor) / factor;\n}\n\nfunction zCritical(alpha = 0.05) {\n  return alpha === 0.1 ? 1.64 : 1.96;\n}\n\nfunction zPower(power = 0.8) {\n  if (power >= 0.9) return 1.28;\n  if (power >= 0.85) return 1.04;\n  return 0.84;\n}\n\nfunction approximateSampleSize(baselineRate, expectedRelativeLift, alpha = 0.05, power = 0.8) {\n  if (!baselineRate || !expectedRelativeLift) return null;\n  const p1 = baselineRate;\n  const p2 = baselineRate * (1 + expectedRelativeLift);\n  const delta = Math.abs(p2 - p1);\n  if (delta === 0) return null;\n  const pooled = (p1 + p2) / 2;\n  const za = zCritical(alpha);\n  const zb = zPower(power);\n  const numerator = Math.pow(za * Math.sqrt(2 * pooled * (1 - pooled)) + zb * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2)), 2);\n  return Math.ceil(numerator / Math.pow(delta, 2));\n}\n\nconst baselineConversions = Number(inputs.baseline_conversions || 0);\nconst baselineVisitors = Number(inputs.baseline_visitors || 0);\nconst variantConversions = Number(inputs.variant_conversions || 0);\nconst variantVisitors = Number(inputs.variant_visitors || 0);\nconst expectedRelativeLift = Number(inputs.expected_relative_lift || 0.02);\nconst dailyEligibleTraffic = Number(inputs.daily_eligible_traffic || 0);\nconst baselineRate = rate(baselineConversions, baselineVisitors);\nconst variantRate = rate(variantConversions, variantVisitors);\nconst absoluteUplift = variantRate - baselineRate;\nconst relativeLift = baselineRate === 0 ? 0 : absoluteUplift / baselineRate;\nconst sampleSizePerVariant = approximateSampleSize(baselineRate, expectedRelativeLift, 0.05, 0.8);\nconst estimatedTestDurationDays = sampleSizePerVariant && dailyEligibleTraffic ? Math.ceil(sampleSizePerVariant / (dailyEligibleTraffic / 2)) : null;\n\nreturn [{\n  json: {\n    ...$json,\n    stats_summary: {\n      baseline_rate: round(baselineRate, 4),\n      variant_rate: round(variantRate, 4),\n      absolute_uplift: round(absoluteUplift, 4),\n      relative_lift: round(relativeLift, 4),\n      sample_size_per_variant_approx: sampleSizePerVariant,\n      estimated_test_duration_days: estimatedTestDurationDays,\n      significance_summary: baselineVisitors && variantVisitors ? 'Directional estimate available from supplied baseline inputs.' : 'No observed variant data supplied; using planning-style estimates only.'\n    }\n  }\n}];"
+      },
+      "id": "17",
+      "name": "Estimate Experiment Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        40
+      ],
+      "notes": "Estimates practical experiment metrics such as baseline rate, uplift, sample size, and rough duration.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENAI_BASE_URL ? $env.OPENAI_BASE_URL + '/chat/completions' : 'https://api.openai.com/v1/chat/completions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENAI_MODEL || 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You are the final decision agent in an experimentation governance workflow. Choose exactly one recommendation: Ready to Launch, Needs Revision, or Not Recommended Yet. Align with the deterministic score and blockers. Output JSON only with fields: final_recommendation, recommendation_reasoning, strengths, weaknesses, actionable_feedback, alternative_design_if_applicable, improvement_priority.'\n    },\n    {\n      role: 'user',\n      content: `Structured brief:\\n${JSON.stringify($json.structured_brief, null, 2)}\\n\\nDesign review:\\n${JSON.stringify($json.review_assessment, null, 2)}\\n\\nDeterministic readiness scoring:\\n${JSON.stringify($json.readiness_scoring, null, 2)}\\n\\nPractical stats summary:\\n${JSON.stringify($json.stats_summary, null, 2)}\\n\\nIteration context:\\n${JSON.stringify({ iteration_number: $json.iteration_number, max_iterations: $json.max_iterations }, null, 2)}`\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "18",
+      "name": "Generate Experiment Decision (AI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        40
+      ],
+      "notes": "Generates the governed experiment recommendation while the deterministic score remains the control layer.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const prior = $('Estimate Experiment Metrics').first().json;\nconst content = $json.choices?.[0]?.message?.content || $json.output_text || '';\nlet decision;\n\ntry {\n  decision = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (error) {\n  decision = {\n    final_recommendation: prior.readiness_scoring?.suggested_recommendation || 'Needs Revision',\n    recommendation_reasoning: 'Decision output could not be parsed, so the deterministic suggestion was used.',\n    strengths: [],\n    weaknesses: ['Decision agent parsing failure'],\n    actionable_feedback: {\n      missing_items: [],\n      weak_areas: ['Decision agent parsing failure'],\n      required_changes: ['Inspect the model response or rerun the decision step.'],\n      suggested_alternative_design: ''\n    },\n    alternative_design_if_applicable: '',\n    improvement_priority: 'high'\n  };\n}\n\nconst entry = {\n  iteration_number: prior.iteration_number,\n  decision: decision.final_recommendation,\n  readiness_score: prior.readiness_scoring?.readiness_score,\n  what_changed: [],\n  feedback: decision.actionable_feedback || {}\n};\n\nreturn [{\n  json: {\n    ...prior,\n    decision_result: decision,\n    iteration_history: [...(prior.iteration_history || []), entry]\n  }\n}];"
+      },
+      "id": "19",
+      "name": "Log Decision & Iteration History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        40
+      ],
+      "notes": "Logs the decision, score, and iteration feedback with graceful fallback if AI JSON is malformed.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.decision_result?.final_recommendation || '' }}",
+              "operation": "equal",
+              "value2": "Ready to Launch"
+            }
+          ]
+        }
+      },
+      "id": "20",
+      "name": "Check Launch Readiness",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        960,
+        40
+      ],
+      "notes": "Launch-ready items go to human approval. Non-ready items go into the controlled refinement loop.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ Number($json.iteration_number || 1) }}",
+              "operation": "smaller",
+              "value2": "={{ Number($json.max_iterations || 3) }}"
+            }
+          ]
+        }
+      },
+      "id": "21",
+      "name": "Check Iteration Limit",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        150
+      ],
+      "notes": "Checks whether another refinement cycle is allowed. If not, the workflow finalizes with a governed non-ready outcome.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENAI_BASE_URL ? $env.OPENAI_BASE_URL + '/chat/completions' : 'https://api.openai.com/v1/chat/completions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENAI_MODEL || 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You are a refinement agent in an experimentation governance workflow. Improve the experiment brief using the review findings, decision feedback, and reviewer comments if present. Output JSON only with fields: revised_brief, change_summary, unresolved_limitations.'\n    },\n    {\n      role: 'user',\n      content: `Original brief:\\n${JSON.stringify($json.structured_brief, null, 2)}\\n\\nReview findings:\\n${JSON.stringify($json.review_assessment, null, 2)}\\n\\nDecision feedback:\\n${JSON.stringify($json.decision_result, null, 2)}\\n\\nReviewer comments:\\n${JSON.stringify({ reviewer_action: $json.reviewer_action, reviewer_comments: $json.reviewer_comments }, null, 2)}`\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "22",
+      "name": "Improve Experiment Design (AI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        150
+      ],
+      "notes": "Improves the experiment design using structured review and decision feedback.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const prior = $('Check Iteration Limit').first().json;\nconst content = $json.choices?.[0]?.message?.content || $json.output_text || '';\nlet refinement;\n\ntry {\n  refinement = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (error) {\n  refinement = {\n    revised_brief: prior.structured_brief,\n    change_summary: ['Refinement agent output could not be parsed.'],\n    unresolved_limitations: ['Manual review needed due to refinement parsing failure.']\n  };\n}\n\nconst history = [...(prior.iteration_history || [])];\nif (history.length) {\n  history[history.length - 1].what_changed = refinement.change_summary || [];\n}\n\nreturn [{\n  json: {\n    ...prior,\n    structured_brief: refinement.revised_brief || prior.structured_brief,\n    refinement_result: refinement,\n    iteration_history: history,\n    iteration_number: Number(prior.iteration_number || 1) + 1\n  }\n}];"
+      },
+      "id": "23",
+      "name": "Update Brief & Increment Iteration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        150
+      ],
+      "notes": "Applies the refined brief, writes the change summary into iteration history, and increments the iteration counter.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.reviewer_action || '' }}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "id": "24",
+      "name": "Check Approval Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -70
+      ],
+      "notes": "Checks whether human approval input is already present in the request. If not, returns an approval request response.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  status: 'awaiting_approval',\n  experiment_id: $json.experiment_id,\n  experiment_slug: $json.experiment_slug,\n  final_recommendation: $json.decision_result.final_recommendation,\n  recommendation_reasoning: $json.decision_result.recommendation_reasoning,\n  iteration_history: $json.iteration_history,\n  approval_options: ['approve', 'changes_requested', 'reject'],\n  instruction: 'Re-run the webhook with reviewer_action and optional reviewer_comments to continue.'\n} }}",
+        "options": {}
+      },
+      "id": "25",
+      "name": "Request Human Approval",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        -140
+      ],
+      "notes": "Returns the governed decision package and ends only the awaiting-approval path.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ ($json.reviewer_action || '').toLowerCase() }}",
+              "operation": "equal",
+              "value2": "changes_requested"
+            }
+          ]
+        }
+      },
+      "id": "26",
+      "name": "Check If Changes Requested",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        10
+      ],
+      "notes": "Routes changes-requested approval outcomes back into the refinement loop.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ ($json.reviewer_action || '').toLowerCase() }}",
+              "operation": "equal",
+              "value2": "reject"
+            }
+          ]
+        }
+      },
+      "id": "27",
+      "name": "Check If Rejected",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        -40
+      ],
+      "notes": "Separates explicit rejection from approval.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "let approvalStatus = 'approved';\nconst action = ($json.reviewer_action || '').toLowerCase();\nif (action === 'reject') approvalStatus = 'rejected';\nif (action === 'changes_requested') approvalStatus = 'changes_requested';\nif ($json.decision_result?.final_recommendation !== 'Ready to Launch' && Number($json.iteration_number || 1) >= Number($json.max_iterations || 3)) {\n  approvalStatus = approvalStatus === 'approved' ? 'not_ready_max_iterations_reached' : approvalStatus;\n}\n\nreturn [{\n  json: {\n    ...$json,\n    approval_status: approvalStatus\n  }\n}];"
+      },
+      "id": "28",
+      "name": "Finalize Approval Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        20
+      ],
+      "notes": "Normalizes the final approval or max-iteration status before output generation.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENAI_BASE_URL ? $env.OPENAI_BASE_URL + '/chat/completions' : 'https://api.openai.com/v1/chat/completions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENAI_MODEL || 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You are a documentation agent inside an experimentation governance workflow. Transform the finalized experiment package into auditable artifact content. Output JSON only with fields: experiment_brief_markdown, metric_framework_markdown, decision_log_markdown, risks_and_assumptions_markdown, structured_output_json.'\n    },\n    {\n      role: 'user',\n      content: `Workflow output:\\n${JSON.stringify({\n        experiment_id: $json.experiment_id,\n        experiment_slug: $json.experiment_slug,\n        structured_brief: $json.structured_brief,\n        review_assessment: $json.review_assessment,\n        readiness_scoring: $json.readiness_scoring,\n        stats_summary: $json.stats_summary,\n        decision_result: $json.decision_result,\n        iteration_history: $json.iteration_history,\n        approval_status: $json.approval_status,\n        reviewer_comments: $json.reviewer_comments\n      }, null, 2)}`\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "29",
+      "name": "Generate Experiment Documentation (AI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        20
+      ],
+      "notes": "Generates final experiment documentation and auditable business artifacts.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const prior = $('Finalize Approval Status').first().json;\nconst content = $json.choices?.[0]?.message?.content || $json.output_text || '';\nlet docs;\n\ntry {\n  docs = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (error) {\n  docs = {\n    experiment_brief_markdown: '# Experiment Brief\\n\\nDocumentation agent parsing failed.',\n    metric_framework_markdown: '# Metric Framework\\n\\nDocumentation agent parsing failed.',\n    decision_log_markdown: '# Decision Log\\n\\nDocumentation agent parsing failed.',\n    risks_and_assumptions_markdown: '# Risks And Assumptions\\n\\nDocumentation agent parsing failed.',\n    structured_output_json: {}\n  };\n}\n\nreturn [{\n  json: {\n    ...prior,\n    artifact_bundle: docs,\n    artifact_paths: [\n      `experiments/${prior.experiment_slug}/experiment_brief.md`,\n      `experiments/${prior.experiment_slug}/metric_framework.md`,\n      `experiments/${prior.experiment_slug}/decision_log.md`,\n      `experiments/${prior.experiment_slug}/risks_and_assumptions.md`,\n      `experiments/${prior.experiment_slug}/structured_output.json`\n    ]\n  }\n}];"
+      },
+      "id": "30",
+      "name": "Prepare Artifact Outputs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        20
+      ],
+      "notes": "Prepares the final artifact bundle and output paths with safe fallback if AI documentation parsing fails.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  status: 'completed',\n  experiment_id: $json.experiment_id,\n  experiment_slug: $json.experiment_slug,\n  final_decision: $json.decision_result.final_recommendation,\n  approval_status: $json.approval_status,\n  iteration_history: $json.iteration_history,\n  readiness_scoring: $json.readiness_scoring,\n  stats_summary: $json.stats_summary,\n  artifact_paths: $json.artifact_paths,\n  artifact_bundle: $json.artifact_bundle\n} }}",
+        "options": {}
+      },
+      "id": "31",
+      "name": "Return Final Experiment Package",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2080,
+        20
+      ],
+      "notes": "Returns the final decision package, iteration history, and generated artifacts.",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Receive Experiment Request": {
+      "main": [
+        [
+          {
+            "node": "Standardize Input Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Standardize Input Payload": {
+      "main": [
+        [
+          {
+            "node": "Initialize Experiment Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Experiment Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Experiment Brief (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Experiment Brief (AI)": {
+      "main": [
+        [
+          {
+            "node": "Validate & Structure Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Structure Brief": {
+      "main": [
+        [
+          {
+            "node": "Check Missing Information",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Missing Information": {
+      "main": [
+        [
+          {
+            "node": "Generate Clarification Questions (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluate Experiment Design (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Clarification Questions (AI)": {
+      "main": [
+        [
+          {
+            "node": "Extract Clarification Questions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Clarification Questions": {
+      "main": [
+        [
+          {
+            "node": "Check If Clarifications Provided",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Clarifications Provided": {
+      "main": [
+        [
+          {
+            "node": "Merge Clarifications Into Brief",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Clarification Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Clarifications Into Brief": {
+      "main": [
+        [
+          {
+            "node": "Rebuild Experiment Brief (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rebuild Experiment Brief (AI)": {
+      "main": [
+        [
+          {
+            "node": "Validate Updated Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Updated Brief": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Experiment Design (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Experiment Design (AI)": {
+      "main": [
+        [
+          {
+            "node": "Extract Review Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Review Insights": {
+      "main": [
+        [
+          {
+            "node": "Compute Experiment Readiness Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Experiment Readiness Score": {
+      "main": [
+        [
+          {
+            "node": "Estimate Experiment Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Estimate Experiment Metrics": {
+      "main": [
+        [
+          {
+            "node": "Generate Experiment Decision (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Experiment Decision (AI)": {
+      "main": [
+        [
+          {
+            "node": "Log Decision & Iteration History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Decision & Iteration History": {
+      "main": [
+        [
+          {
+            "node": "Check Launch Readiness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Launch Readiness": {
+      "main": [
+        [
+          {
+            "node": "Check Approval Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Iteration Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Iteration Limit": {
+      "main": [
+        [
+          {
+            "node": "Improve Experiment Design (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Approval Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Improve Experiment Design (AI)": {
+      "main": [
+        [
+          {
+            "node": "Update Brief & Increment Iteration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Brief & Increment Iteration": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Experiment Design (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Approval Status": {
+      "main": [
+        [
+          {
+            "node": "Request Human Approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check If Changes Requested",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Changes Requested": {
+      "main": [
+        [
+          {
+            "node": "Check Iteration Limit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check If Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Rejected": {
+      "main": [
+        [
+          {
+            "node": "Finalize Approval Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Approval Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Approval Status": {
+      "main": [
+        [
+          {
+            "node": "Generate Experiment Documentation (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Experiment Documentation (AI)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Artifact Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Artifact Outputs": {
+      "main": [
+        [
+          {
+            "node": "Return Final Experiment Package",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "agentic-experimentation-decision-engine"
+}

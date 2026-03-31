@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExperimentDecision",
+  "type": "object",
+  "required": [
+    "final_recommendation",
+    "recommendation_reasoning",
+    "strengths",
+    "weaknesses",
+    "actionable_feedback",
+    "alternative_design_if_applicable",
+    "improvement_priority"
+  ],
+  "properties": {
+    "final_recommendation": {
+      "type": "string",
+      "enum": ["Ready to Launch", "Needs Revision", "Not Recommended Yet"]
+    },
+    "recommendation_reasoning": { "type": "string" },
+    "strengths": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "weaknesses": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "actionable_feedback": {
+      "type": "object",
+      "required": [
+        "missing_items",
+        "weak_areas",
+        "required_changes",
+        "suggested_alternative_design"
+      ],
+      "properties": {
+        "missing_items": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "weak_areas": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "required_changes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "suggested_alternative_design": { "type": "string" }
+      }
+    },
+    "alternative_design_if_applicable": { "type": "string" },
+    "improvement_priority": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExperimentRefinement",
+  "type": "object",
+  "required": ["revised_brief", "change_summary", "unresolved_limitations"],
+  "properties": {
+    "revised_brief": {
+      "$ref": "./intake_brief.schema.json"
+    },
+    "change_summary": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "unresolved_limitations": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

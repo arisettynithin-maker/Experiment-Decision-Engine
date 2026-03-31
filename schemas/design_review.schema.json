@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExperimentDesignReview",
+  "type": "object",
+  "required": [
+    "review_summary",
+    "hypothesis_testability",
+    "metric_quality",
+    "experiment_design_fit",
+    "instrumentation_readiness",
+    "bias_and_confounding_risks",
+    "randomization_review",
+    "missing_guardrails",
+    "recommended_experiment_approach",
+    "blockers",
+    "revision_actions",
+    "reviewer_confidence"
+  ],
+  "properties": {
+    "review_summary": { "type": "string" },
+    "hypothesis_testability": {
+      "type": "object",
+      "required": ["score", "comment"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "comment": { "type": "string" }
+      }
+    },
+    "metric_quality": {
+      "type": "object",
+      "required": ["score", "comment"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "comment": { "type": "string" }
+      }
+    },
+    "experiment_design_fit": {
+      "type": "object",
+      "required": ["score", "comment"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "comment": { "type": "string" }
+      }
+    },
+    "instrumentation_readiness": {
+      "type": "object",
+      "required": ["score", "comment"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "comment": { "type": "string" }
+      }
+    },
+    "bias_and_confounding_risks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "randomization_review": { "type": "string" },
+    "missing_guardrails": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "recommended_experiment_approach": { "type": "string" },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "issue"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "medium", "low"]
+          },
+          "issue": { "type": "string" }
+        }
+      }
+    },
+    "revision_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reviewer_confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    }
+  }
+}

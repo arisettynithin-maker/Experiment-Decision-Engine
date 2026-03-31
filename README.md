@@ -2,6 +2,9 @@
 
 An n8n workflow for experiment intake, analytical review, readiness scoring, human approval, and governed documentation output.
 
+<img width="1593" height="406" alt="Screenshot 2026-03-31 at 9 02 32 PM" src="https://github.com/user-attachments/assets/5a3aa3a5-c90b-46b7-9cc9-4a943cc535c4" />
+
+
 ## Business Problem
 
 Experiment ideas often arrive as loose requests in Slack threads, planning docs, or stakeholder messages. Teams then lose time translating those ideas into measurable briefs, checking whether the design is actually testable, and documenting the decision process in a way that is reusable and auditable.

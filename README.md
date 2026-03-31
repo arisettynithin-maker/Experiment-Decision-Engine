@@ -144,10 +144,6 @@ This repository is relevant for analytics, product, BI, experimentation, and AI 
 - managing approval, auditability, and governance in workflow systems
 - building experimentation support tooling that looks like an internal operating system, not a toy demo
 
-## Screenshots
-
-The repository is structured to support workflow screenshots in `/screenshots`. No screenshot asset is currently included in this version of the repo.
-
 ## Future Improvements
 
 - Add a real screenshot export of the n8n canvas

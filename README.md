@@ -146,7 +146,6 @@ This repository is relevant for analytics, product, BI, experimentation, and AI 
 
 ## Future Improvements
 
-- Add a real screenshot export of the n8n canvas
 - Add schema validation nodes before downstream routing
 - Persist experiment records in a backing database instead of webhook-only state
 - Add GitHub write-back nodes for automated artifact commits

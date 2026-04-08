@@ -1,153 +1,119 @@
-# Agentic Experimentation Decision Engine
+# Experiment Decision Engine
 
-An n8n workflow for experiment intake, analytical review, readiness scoring, human approval, and governed documentation output.
+Workflow-based experimentation intake and governance system built in n8n to standardise experiment review, readiness scoring, approval flow, and auditable decision output.
 
-<img width="1593" height="406" alt="Screenshot 2026-03-31 at 9 02 32 PM" src="https://github.com/user-attachments/assets/5a3aa3a5-c90b-46b7-9cc9-4a943cc535c4" />
+<img width="1593" height="406" alt="Experiment Decision Engine workflow" src="https://github.com/user-attachments/assets/5a3aa3a5-c90b-46b7-9cc9-4a943cc535c4" />
 
+## Project Overview
+
+This project treats experimentation as an operating system rather than a one-off test request. It packages intake, design review, deterministic scoring, approval, and documentation into a governed workflow that can be reused by analytics, product, and experimentation teams.
+
+It is a strong example of practical automation applied to decision support, with AI used as an assistive layer rather than an uncontrolled replacement for structured review.
 
 ## Business Problem
 
-Experiment ideas often arrive as loose requests in Slack threads, planning docs, or stakeholder messages. Teams then lose time translating those ideas into measurable briefs, checking whether the design is actually testable, and documenting the decision process in a way that is reusable and auditable.
+Experiment requests often arrive in an inconsistent format:
 
-This project packages that process into a single workflow. Instead of treating experimentation like a one-off A/B test setup task, it treats it as a governed operating process with structured inputs, deterministic controls, review loops, and explicit approval states.
+- ideas come through Slack, docs, or stakeholder messages
+- hypotheses are under-defined
+- test design quality varies
+- readiness checks are manual
+- audit trails are weak or missing
 
-## What The Workflow Does
+That slows down experimentation and creates governance risk.
 
-The workflow accepts a raw experiment request through a webhook and moves it through these stages:
+## Solution / Approach
 
-1. Standardizes the incoming request and creates experiment metadata.
-2. Uses an AI intake step to convert the raw idea into a structured experiment brief.
-3. Detects missing information and, when needed, returns targeted clarification questions.
-4. Rebuilds the brief once clarifications are supplied.
-5. Runs an AI design review focused on testability, metrics, randomization, instrumentation, and bias risk.
-6. Applies deterministic readiness scoring in n8n `Code` nodes.
-7. Estimates practical experiment metrics such as baseline rate, lift, sample size, and duration.
-8. Produces a governed recommendation: `Ready to Launch`, `Needs Revision`, or `Not Recommended Yet`.
-9. Routes the result through human approval with `approve`, `changes_requested`, and `reject` actions.
-10. Runs a refinement loop when changes are needed, up to a controlled iteration limit.
-11. Generates auditable markdown and JSON outputs for downstream storage or repo write-back.
+This repository implements a workflow engine that:
 
-## Architecture Overview
+- captures experiment requests through a webhook
+- converts raw requests into structured briefs
+- identifies missing information and asks clarifying questions
+- runs AI-assisted design review
+- applies deterministic readiness scoring
+- estimates practical experiment metrics
+- routes decisions through human approval
+- generates structured markdown and JSON outputs for traceability
 
-The implementation is organized into five layers:
+The result is a repeatable experimentation process with stronger controls and clearer documentation.
 
-- Intake layer: receives the request, normalizes fields, and initializes experiment context.
-- Clarification layer: asks focused follow-up questions and rebuilds incomplete briefs.
-- Analysis layer: evaluates design quality, applies deterministic scoring, and estimates experiment metrics.
-- Decision layer: issues one final governed recommendation and logs iteration history.
-- Governance and output layer: handles approval, rejection, iteration limits, and documentation output.
+## Tech Stack
 
-See [docs/architecture.md](docs/architecture.md) and [docs/workflow_overview.md](docs/workflow_overview.md) for the full breakdown.
+- n8n
+- JavaScript in n8n `Code` nodes
+- OpenAI-compatible API calls
+- JSON schemas
+- Markdown and JSON output generation
 
 ## Key Features
 
-- AI-assisted experiment brief generation from raw business requests
-- Clarification flow for incomplete briefs
-- Senior-style design review focused on measurement and experimentation quality
-- Deterministic readiness scoring as a control layer over AI reasoning
-- Practical experiment metric estimation inside n8n `Code` nodes
-- Human-in-the-loop approval and rejection handling
-- Iterative refinement loop with auditable iteration history
-- Structured documentation output for governance and traceability
-- Importable n8n workflow JSON with runtime-safe branching
+- Structured experiment intake
+- Clarification loop for incomplete requests
+- AI-assisted design review
+- Deterministic readiness scoring
+- Sample size and duration estimation
+- Human-in-the-loop approval
+- Governed recommendation states
+- Audit-friendly output generation
 
-## Feedback Loop And Governance
+## Outputs / Workflow Assets
 
-The project is intentionally not a chatbot demo. The workflow includes explicit governance controls:
+This repository includes:
 
-- Missing information does not get guessed. It is returned as clarification work.
-- AI recommendations do not act alone. Deterministic scoring remains a control layer.
-- Non-ready experiments do not silently fail. They enter a bounded refinement loop.
-- Finalization still requires a human approval signal.
-- Every iteration is logged so the decision trail stays explainable.
+- importable workflow JSON in `workflows/`
+- architecture and environment docs in `docs/`
+- prompt templates in `prompts/`
+- schemas in `schemas/`
+- examples and output samples in `examples/` and `outputs/`
 
-This makes the project more representative of a real internal experimentation workflow than a simple A/B testing helper.
+Start here:
 
-## Technologies Used
+- [docs/architecture.md](docs/architecture.md)
+- [docs/workflow_overview.md](docs/workflow_overview.md)
+- [docs/environment_variables.md](docs/environment_variables.md)
 
-- n8n
-- OpenAI-compatible chat completion API via `HTTP Request` nodes
-- JavaScript in n8n `Code` nodes
-- JSON-first structured outputs
-- Git/GitHub for public repo presentation and audit-friendly artifacts
+## Business Impact / Why It Matters
+
+This project matters because it moves experimentation closer to a governed decision process:
+
+- reduces ambiguity in experiment intake
+- improves consistency in review quality
+- creates a clearer approval and revision path
+- keeps AI inside a controlled operating model
+- produces documentation that is reusable and auditable
+
+It positions analytics and experimentation work as operational infrastructure, not just analysis.
 
 ## Repository Structure
 
 ```text
 .
 ├── README.md
-├── LICENSE
-├── .gitignore
 ├── workflows/
 │   └── agentic_experimentation_decision_engine.json
 ├── docs/
 │   ├── architecture.md
-│   ├── workflow_overview.md
-│   └── linkedin_post.md
+│   ├── environment_variables.md
+│   ├── linkedin_post.md
+│   └── workflow_overview.md
 ├── prompts/
-│   ├── intake_agent_prompt.md
-│   ├── clarification_agent_prompt.md
-│   ├── design_review_agent_prompt.md
-│   ├── decision_agent_prompt.md
-│   ├── refinement_agent_prompt.md
-│   └── documentation_agent_prompt.md
-├── examples/
-│   ├── sample_request_complete.json
-│   ├── sample_request_clarification.json
-│   ├── sample_request_approval.json
-│   ├── sample_request_changes_requested.json
-│   └── sample_request_reject.json
-├── outputs/
-│   └── sample_final_output.json
-├── analysis/
-│   ├── experiment_stats_code.js
-│   └── readiness_scoring_code.js
 ├── schemas/
-│   ├── decision.schema.json
-│   ├── design_review.schema.json
-│   ├── documentation.schema.json
-│   ├── follow_up.schema.json
-│   ├── intake_brief.schema.json
-│   └── refinement.schema.json
+├── examples/
+├── outputs/
+├── analysis/
 └── experiments/
-    └── free-delivery-repeat-customers/
 ```
 
-## How To Test The Workflow
+## How to Run
 
-1. Import [workflows/agentic_experimentation_decision_engine.json](workflows/agentic_experimentation_decision_engine.json) into n8n.
-2. Set environment variables for `OPENAI_API_KEY`, and optionally `OPENAI_BASE_URL` and `OPENAI_MODEL`.
-3. Activate test mode in n8n and copy the webhook URL from `Receive Experiment Request`.
-4. Send a `POST` request with a JSON body matching one of the samples in [`examples/`](examples).
-5. Re-run the webhook with clarification answers or reviewer actions when the workflow returns `awaiting_clarification` or `awaiting_approval`.
-
-## Sample Webhook Payloads
-
-- Complete request: [examples/sample_request_complete.json](examples/sample_request_complete.json)
-- Clarification-required request: [examples/sample_request_clarification.json](examples/sample_request_clarification.json)
-- Approval callback: [examples/sample_request_approval.json](examples/sample_request_approval.json)
-- Changes-requested callback: [examples/sample_request_changes_requested.json](examples/sample_request_changes_requested.json)
-- Reject callback: [examples/sample_request_reject.json](examples/sample_request_reject.json)
-
-## Example Output
-
-- Final output example: [outputs/sample_final_output.json](outputs/sample_final_output.json)
-- Example artifact bundle: [experiments/free-delivery-repeat-customers/structured_output.json](experiments/free-delivery-repeat-customers/structured_output.json)
-
-## Why This Project Is Relevant
-
-This repository is relevant for analytics, product, BI, experimentation, and AI workflow roles because it demonstrates:
-
-- translating ambiguous business requests into structured analytical artifacts
-- designing operational workflows rather than isolated analyses
-- combining deterministic logic with AI-generated reasoning
-- managing approval, auditability, and governance in workflow systems
-- building experimentation support tooling that looks like an internal operating system, not a toy demo
+1. Import `workflows/agentic_experimentation_decision_engine.json` into n8n.
+2. Configure the required environment variables described in [docs/environment_variables.md](docs/environment_variables.md).
+3. Use the webhook from the intake step to submit sample experiment requests.
+4. Review the generated recommendation, approval path, and output artifacts.
 
 ## Future Improvements
 
-- Add schema validation nodes before downstream routing
-- Persist experiment records in a backing database instead of webhook-only state
-- Add GitHub write-back nodes for automated artifact commits
-- Add Slack or email approval UX on top of the reviewer webhook contract
-
+- connect output storage directly to a governed knowledge base
+- add richer performance analytics for experiment backlog management
+- integrate approval routing with team collaboration tools
+- add a lightweight UI layer for non-technical users
